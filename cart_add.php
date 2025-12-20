@@ -1,0 +1,82 @@
+<?php
+require_once __DIR__ . '/config.php';
+
+if (session_status() === PHP_SESSION_NONE) session_start();
+
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/auth.php';
+
+/* تأكد إن المستخدم مسجل */
+if (!is_logged_in()) {
+  $_SESSION['flash'] = 'يرجى تسجيل الدخول لإضافة منتجات إلى العربة.';
+  header('Location: user_login.php');
+  exit;
+}
+
+/* تأكد من البيانات */
+if (
+  empty($_POST['product_id']) ||
+  empty($_POST['variant_id']) ||
+  empty($_POST['qty'])
+) {
+  header('Location: index.php');
+  exit;
+}
+
+$product_id = (int)$_POST['product_id'];
+$variant_id = (int)$_POST['variant_id'];
+$qty        = max(1, (int)$_POST['qty']);
+
+$pdo = db();
+
+/* جلب المنتج + اللون + مخزون اللون */
+$stmt = $pdo->prepare(
+  "SELECT 
+      pv.id   AS variant_id,
+      pv.stock AS variant_stock,
+      p.id    AS product_id,
+      p.name,
+      p.price
+   FROM product_variants pv
+   JOIN products p ON p.id = pv.product_id
+   WHERE pv.id = :vid AND p.id = :pid
+   LIMIT 1"
+);
+
+$stmt->execute([
+  ':vid' => $variant_id,
+  ':pid' => $product_id
+]);
+
+$row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$row) {
+  $_SESSION['flash'] = 'المنتج أو اللون غير موجود.';
+  header('Location: index.php');
+  exit;
+}
+
+/* تحقق من الكمية */
+if ($row['variant_stock'] < $qty) {
+  $_SESSION['flash'] = 'الكمية المطلوبة غير متوفرة.';
+  header('Location: product_details.php?id=' . $product_id);
+  exit;
+}
+
+/* إنشاء العربة إذا مش موجودة */
+if (!isset($_SESSION['cart'])) {
+  $_SESSION['cart'] = [];
+}
+
+/* التخزين حسب variant_id */
+if (!isset($_SESSION['cart'][$variant_id])) {
+  $_SESSION['cart'][$variant_id] = [
+    'product_id' => $product_id,
+    'qty' => 0
+  ];
+}
+
+$_SESSION['cart'][$variant_id]['qty'] += $qty;
+
+header('Location: cart.php');
+exit;
