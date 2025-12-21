@@ -42,16 +42,20 @@ if ($orders) {
   }
 }
 
+
 function order_status_meta(string $status): array {
 
-  $status = strtolower(trim($status));
+  $status = trim($status);
 
   return match ($status) {
-    'pending_cod', 'pending'    => ['badge-pending', 'قيد التأكيد'],
-    'processing', 'in_progress' => ['badge-processing', 'قيد التنفيذ'],
-    'completed', 'done'         => ['badge-completed', 'مكتمل'],
-    'cancelled', 'canceled'     => ['badge-cancelled', 'ملغى'],
-    default                     => ['badge-neutral', 'قيد التأكيد'],
+
+    // عربي
+    'قيد التأكيد' => ['badge-pending', 'قيد التأكيد'],
+    'قيد التنفيذ' => ['badge-processing', 'قيد التنفيذ'],
+    'مكتمل'       => ['badge-completed', 'مكتمل'],
+    'ملغى'        => ['badge-cancelled', 'ملغى'],
+
+    default => ['badge-neutral', $status],
   };
 }
 ?>
