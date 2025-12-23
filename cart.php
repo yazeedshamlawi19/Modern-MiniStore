@@ -52,29 +52,59 @@ if (!$cart) {
 
 } else {
 
-  // مفاتيح العربة هي variant_id
-  $variantIds = array_map('intval', array_keys($cart));
-  $in = implode(',', array_fill(0, count($variantIds), '?'));
+  $items = [];
+  $total = 0;
 
-  $stmt = $pdo->prepare(
-    "SELECT
-        pv.id   AS variant_id,
-        pv.color,
-        p.name,
-        p.price
-     FROM product_variants pv
-     JOIN products p ON p.id = pv.product_id
-     WHERE pv.id IN ($in)"
-  );
+  foreach ($cart as $key => $c) {
 
-  $stmt->execute($variantIds);
-  $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // منتج مع لون
+    if (strpos($key, 'v_') === 0) {
+
+      $stmt = $pdo->prepare("
+        SELECT 
+          p.name,
+          p.price,
+          pv.color
+        FROM product_variants pv
+        JOIN products p ON p.id = pv.product_id
+        WHERE pv.id = ?
+      ");
+      $stmt->execute([(int)$c['variant_id']]);
+      $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    } else {
+
+      // منتج بدون لون
+      $stmt = $pdo->prepare("
+        SELECT 
+          name,
+          price,
+          NULL AS color
+        FROM products
+        WHERE id = ?
+      ");
+      $stmt->execute([(int)$c['product_id']]);
+      $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    if (!$row) continue;
+
+    $qty = (int)$c['qty'];
+    $line = $qty * (float)$row['price'];
+    $total += $line;
+
+    $items[] = [
+      'name'  => $row['name'],
+      'color' => $row['color'],
+      'qty'   => $qty,
+      'price'=> $row['price'],
+      'line' => $line
+    ];
+  }
 
   if (!$items) {
     echo '<p>🛒 عربتك فارغة.</p>';
   } else {
-
-    $total = 0;
 
     echo '
       <table class="table">
@@ -91,23 +121,13 @@ if (!$cart) {
     ';
 
     foreach ($items as $it) {
-
-      $variant_id = (int)$it['variant_id'];
-      $qty = $cart[$variant_id]['qty'] ?? 0;
-
-      if ($qty <= 0) continue;
-
-      $price = (float)$it['price'];
-      $line  = $qty * $price;
-      $total += $line;
-
       echo '
         <tr>
           <td>'.htmlspecialchars($it['name']).'</td>
-          <td>'.htmlspecialchars($it['color']).'</td>
-          <td>'.$qty.'</td>
-          <td>'.number_format($price, 2).'</td>
-          <td>'.number_format($line, 2).'</td>
+          <td>'.($it['color'] ? htmlspecialchars($it['color']) : '—').'</td>
+          <td>'.$it['qty'].'</td>
+          <td>'.number_format($it['price'], 2).'</td>
+          <td>'.number_format($it['line'], 2).'</td>
         </tr>
       ';
     }
