@@ -12,7 +12,6 @@ require_once __DIR__ . '/auth.php';
 require_login();
 
 $cart = $_SESSION['cart'] ?? [];
-
 $pdo  = db();
 
 $actionUrl = rtrim(BASE_URL, '/') . '/api/cod_place_order.php';
@@ -21,22 +20,57 @@ $items = [];
 
 if (!empty($cart)) {
 
-  $ids = array_map('intval', array_keys($cart));
-  $in  = implode(',', array_fill(0, count($ids), '?'));
+  $variantIds = [];
+  $productIds = [];
 
-  $stmt = $pdo->prepare(
-    "SELECT 
-    pv.id AS variant_id,
-    p.id  AS id,
-    p.name,
-    p.price
- FROM product_variants pv
- JOIN products p ON p.id = pv.product_id
- WHERE pv.id IN ($in)"
-  );
+  foreach ($cart as $key => $row) {
+    if (str_starts_with($key, 'v_')) {
+      $variantIds[] = (int)$row['variant_id'];
+    } else {
+      $productIds[] = (int)$row['product_id'];
+    }
+  }
 
-  $stmt->execute($ids);
-  $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+  $items = [];
+
+  /* ===== منتجات مع ألوان ===== */
+  if ($variantIds) {
+    $in = implode(',', array_fill(0, count($variantIds), '?'));
+
+    $stmt = $pdo->prepare(
+      "SELECT
+        pv.id   AS variant_id,
+        p.id    AS product_id,
+        p.name,
+        p.price,
+        pv.color
+       FROM product_variants pv
+       JOIN products p ON p.id = pv.product_id
+       WHERE pv.id IN ($in)"
+    );
+
+    $stmt->execute($variantIds);
+    $items = array_merge($items, $stmt->fetchAll(PDO::FETCH_ASSOC));
+  }
+
+  /* ===== منتجات بدون ألوان ===== */
+  if ($productIds) {
+    $in = implode(',', array_fill(0, count($productIds), '?'));
+
+    $stmt = $pdo->prepare(
+      "SELECT
+        id AS product_id,
+        name,
+        price,
+        NULL AS variant_id,
+        NULL AS color
+       FROM products
+       WHERE id IN ($in)"
+    );
+
+    $stmt->execute($productIds);
+    $items = array_merge($items, $stmt->fetchAll(PDO::FETCH_ASSOC));
+  }
 }
 ?>
 <!DOCTYPE html>
@@ -48,7 +82,7 @@ if (!empty($cart)) {
   <link rel="stylesheet" href="assets/style.css" />
 
   <style>
-  main.container {
+ main.container {
     display: grid;
     grid-template-columns: 60% 40%;
     gap: 24px;
@@ -138,131 +172,103 @@ if (!empty($cart)) {
     <a href="index.php">المنتجات</a>
     <a href="cart.php">العربة</a>
     <a href="my_orders.php">طلباتي</a>
-
-    <?php if(is_logged_in()): ?>
-      <span class="muted">
-        مرحباً، <?= htmlspecialchars($_SESSION['user']['name']) ?>
-      </span>
-      <a href="user_logout.php">خروج</a>
-    <?php else: ?>
-      <a href="user_login.php">دخول</a>
-      <a href="user_register.php">تسجيل</a>
-    <?php endif; ?>
+    <span class="muted">مرحباً، <?= htmlspecialchars($_SESSION['user']['name']) ?></span>
+    <a href="user_logout.php">خروج</a>
   </nav>
 </header>
 
 <main class="container">
 
-  <section class="card">
+<section class="card">
+  <h3>معلومات الاستلام / التوصيل</h3>
 
-    <h3>معلومات الاستلام/التوصيل</h3>
+  <?php if (!$cart): ?>
+    <p class="muted">عربتك فارغة.</p>
+  <?php else: ?>
+    <form action="<?= htmlspecialchars($actionUrl) ?>" method="post" class="form-grid">
 
-    <?php if (empty($cart)): ?>
+      <label>الاسم الكامل
+        <input type="text" name="customer_name" required>
+      </label>
 
-      <p class="muted">
-        عربتك فارغة.
-        <a class="btn" href="index.php">العودة للمتجر</a>
-      </p>
+      <label>رقم الهاتف
+        <input type="text" name="customer_phone" required>
+      </label>
 
-    <?php else: ?>
+      <label>طريقة الاستلام
+        <select name="delivery_method" required>
+          <option value="delivery">توصيل</option>
+          <option value="pickup">استلام من نقطة</option>
+        </select>
+      </label>
 
-      <form action="<?= htmlspecialchars($actionUrl) ?>"
-            method="post"
-            class="form-grid">
+      <label>العنوان
+        <input type="text" name="address">
+      </label>
 
-        <label>
-          الاسم الكامل
-          <input type="text" name="customer_name" required>
-        </label>
+      <label>نقطة الاستلام
+        <input type="text" name="pickup_location">
+      </label>
 
-        <label>
-          رقم الهاتف
-          <input type="text" name="customer_phone" required>
-        </label>
+      <label>ملاحظات
+        <textarea name="notes"></textarea>
+      </label>
 
-        <label>
-          طريقة الاستلام
-          <select name="delivery_method" required>
-            <option value="delivery">توصيل</option>
-            <option value="pickup">استلام من نقطة</option>
-          </select>
-        </label>
+      <button class="btn primary">تأكيد الطلب</button>
+    </form>
+  <?php endif; ?>
+</section>
 
-        <label>
-          العنوان (للتوصيل)
-          <input type="text" name="address">
-        </label>
+<aside class="card">
+  <h3>ملخص الطلب</h3>
 
-        <label>
-          نقطة الاستلام (للاستلام من نقطة)
-          <input type="text" name="pickup_location">
-        </label>
+  <?php if (!$items): ?>
+    <p class="muted">لا توجد عناصر.</p>
+  <?php else: ?>
 
-        <label>
-          ملاحظات
-          <textarea name="notes"></textarea>
-        </label>
+    <ul>
+      <?php
+      $total = 0;
 
-        <button class="btn primary" type="submit">
-          تأكيد الطلب
-        </button>
-      </form>
-    <?php endif; ?>
-  </section>
+      foreach ($items as $it):
+        $key = $it['variant_id']
+          ? 'v_' . $it['variant_id']
+          : 'p_' . $it['product_id'];
 
-  <aside class="card">
+        $qty = (int)($cart[$key]['qty'] ?? 0);
+        $line = $qty * (float)$it['price'];
+        $total += $line;
+      ?>
+        <li>
+          <span>
+            <?= htmlspecialchars($it['name']) ?>
+            <?= $it['color'] ? ' - ' . htmlspecialchars($it['color']) : '' ?>
+            × <?= $qty ?>
+          </span>
+          <strong><?= number_format($line, 2) ?> USD</strong>
+        </li>
+      <?php endforeach; ?>
+    </ul>
 
-    <h3>ملخص الطلب</h3>
+    <hr>
+    <p class="row">
+      <span>الإجمالي</span>
+      <strong><?= number_format($total, 2) ?> USD</strong>
+    </p>
 
-    <?php if (empty($items)): ?>
+    <p class="muted">الدفع عند الاستلام (COD)</p>
 
-      <p class="muted">لا توجد عناصر لعرضها.</p>
+  <?php endif; ?>
+</aside>
 
-    <?php else: ?>
-
-      <ul>
-        <?php
-        $total = 0;
-
-        foreach ($items as $it):
-          $qty = (int)($cart[$it['variant_id']]['qty'] ?? 0);
-          $line = $qty * (float)$it['price'];
-          $total += $line;
-        ?>
-          <li>
-            <span>
-              <?= htmlspecialchars($it['name']) ?> × <?= $qty ?>
-            </span>
-            <strong>
-              <?= number_format($line,2) ?> USD
-            </strong>
-          </li>
-        <?php endforeach; ?>
-      </ul>
-
-      <hr/>
-
-      <p class="row">
-        <span>الإجمالي</span>
-        <strong><?= number_format($total,2) ?> USD</strong>
-      </p>
-
-      <p class="muted">
-        الدفع يتم عند الاستلام (COD).
-      </p>
-
-    <?php endif; ?>
-  </aside>
 </main>
-
 <script>
   window.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('.card').forEach((c, i) => {
-      setTimeout(() => {
-        c.classList.add('reveal-in');
-      }, 150 * (i + 1));
+    document.querySelectorAll('.card').forEach(c => {
+      c.classList.add('reveal-in');
     });
   });
 </script>
+
 </body>
 </html>
