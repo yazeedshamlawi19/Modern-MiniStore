@@ -68,11 +68,3 @@ CREATE TABLE IF NOT EXISTS product_variants (
 
 ALTER TABLE products
 ADD COLUMN description TEXT AFTER name;
-
-CREATE TABLE IF NOT EXISTS product_colors (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  product_id INT NOT NULL,
-  color_name VARCHAR(50) NOT NULL,
-  color_qty INT NOT NULL DEFAULT 0,
-  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
-);
