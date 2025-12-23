@@ -6,13 +6,14 @@ require_once __DIR__ . '/db.php';
 
 $pdo = db();
 
+/* ================== جلب ID المنتج ================== */
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 if ($id <= 0) {
   header('Location: index.php');
   exit;
 }
 
-/* جلب المنتج */
+/* ================== جلب المنتج ================== */
 $stmt = $pdo->prepare("SELECT * FROM products WHERE id = :id LIMIT 1");
 $stmt->execute([':id' => $id]);
 $product = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -22,7 +23,7 @@ if (!$product) {
   exit;
 }
 
-/* جلب الألوان (variants) */
+/* ================== جلب الألوان (إن وجدت) ================== */
 $st2 = $pdo->prepare("
   SELECT id, color, stock
   FROM product_variants
@@ -32,6 +33,7 @@ $st2 = $pdo->prepare("
 $st2->execute([':pid' => $id]);
 $variants = $st2->fetchAll(PDO::FETCH_ASSOC);
 
+/* هل المستخدم مسجل؟ */
 $is_logged = !empty($_SESSION['user']);
 ?>
 <!DOCTYPE html>
@@ -81,7 +83,6 @@ $is_logged = !empty($_SESSION['user']);
     }
     .primary{background:#a78bfa;color:#fff;}
     .green{background:#22c55e;color:#fff;}
-    .danger{background:#ef4444;color:#fff;}
     select{
       width:100%;
       padding:10px;
@@ -96,79 +97,93 @@ $is_logged = !empty($_SESSION['user']);
   </style>
 </head>
 <body>
-  <div class="wrap">
 
-    <a class="btnx green" href="index.php">⬅️ رجوع للمنتجات</a>
+<div class="wrap">
 
-    <div class="cardx" style="margin-top:14px;">
-      <div class="grid">
+  <a class="btnx green" href="index.php">⬅️ رجوع للمنتجات</a>
 
-        <div class="img">
-          <?php if (!empty($product['image_url'])): ?>
-            <img src="<?= htmlspecialchars($product['image_url']) ?>" alt="product">
-          <?php else: ?>
-            <div style="padding:40px;text-align:center;">لا توجد صورة</div>
-          <?php endif; ?>
-        </div>
+  <div class="cardx" style="margin-top:14px;">
+    <div class="grid">
 
-        <div>
-          <h2 style="margin-top:0;"><?= htmlspecialchars($product['name']) ?></h2>
+      <!-- صورة المنتج -->
+      <div class="img">
+        <?php if (!empty($product['image_url'])): ?>
+          <img src="<?= htmlspecialchars($product['image_url']) ?>" alt="product">
+        <?php else: ?>
+          <div style="padding:40px;text-align:center;">لا توجد صورة</div>
+        <?php endif; ?>
+      </div>
 
-          <p class="muted" style="font-size:18px;">
-            السعر: <b><?= number_format((float)$product['price'], 2) ?> USD</b>
+      <!-- تفاصيل المنتج -->
+      <div>
+
+        <h2><?= htmlspecialchars($product['name']) ?></h2>
+
+        <p class="muted" style="font-size:18px;">
+          السعر: <b><?= number_format((float)$product['price'], 2) ?> USD</b>
+        </p>
+
+        <p class="muted">
+          الكمية العامة: <b><?= (int)$product['stock'] ?></b>
+        </p>
+
+        <?php if (!empty($product['description'])): ?>
+          <p class="muted" style="margin-top:12px;line-height:1.7;">
+            <?= nl2br(htmlspecialchars($product['description'])) ?>
           </p>
+        <?php endif; ?>
 
-          <p class="muted">
-            الكمية العامة: <b><?= (int)$product['stock'] ?></b>
-          </p>
+        <hr style="border-color:rgba(255,255,255,0.2);margin:14px 0;">
 
-          <hr style="border-color:rgba(255,255,255,0.2);margin:14px 0;">
+        <form method="post" action="cart_add.php">
 
-          <form method="post" action="cart_add.php">
-            <input type="hidden" name="product_id" value="<?= (int)$product['id'] ?>">
+          <!-- ID المنتج -->
+          <input type="hidden" name="product_id" value="<?= (int)$product['id'] ?>">
 
-            <?php if (!empty($product['description'])): ?>
-            <p class="muted" style="margin-top:12px;line-height:1.7;">
-           <?= nl2br(htmlspecialchars($product['description'])) ?>
-             </p>
-             <?php endif; ?>
-
-
+          <?php if (!empty($variants)): ?>
+            <!-- المنتج يحتوي على ألوان -->
             <label>اختر اللون (وكمية اللون المتاحة):</label>
 
             <select name="variant_id" required>
               <option value="" disabled selected>اختر لون</option>
-              <?php if (empty($variants)): ?>
-                <option value="" disabled>لا يوجد ألوان مسجلة لهذا المنتج</option>
-              <?php else: ?>
-                <?php foreach ($variants as $v): ?>
-                  <option value="<?= (int)$v['id'] ?>" <?= ((int)$v['stock']<=0?'disabled':'') ?>>
-                    <?= htmlspecialchars($v['color']) ?> — المتاح: <?= (int)$v['stock'] ?>
-                    <?= ((int)$v['stock']<=0 ? ' (غير متوفر)' : '') ?>
-                  </option>
-                <?php endforeach; ?>
-              <?php endif; ?>
+              <?php foreach ($variants as $v): ?>
+                <option value="<?= (int)$v['id'] ?>" <?= ((int)$v['stock'] <= 0 ? 'disabled' : '') ?>>
+                  <?= htmlspecialchars($v['color']) ?> — المتاح: <?= (int)$v['stock'] ?>
+                  <?= ((int)$v['stock'] <= 0 ? ' (غير متوفر)' : '') ?>
+                </option>
+              <?php endforeach; ?>
             </select>
 
-            <label style="display:block;margin-top:12px;">الكمية المطلوبة:</label>
-            <input type="number" name="qty" min="1" value="1" required style="padding:10px;border-radius:10px;border:none;width:140px;">
+          <?php else: ?>
+            <!-- المنتج بدون ألوان -->
+            <input type="hidden" name="variant_id" value="0">
+            <p class="muted">هذا المنتج لا يحتوي على ألوان.</p>
+          <?php endif; ?>
 
-            <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;">
-              <?php if ($is_logged): ?>
-                <button class="btnx primary" type="submit">🛒 إضافة للعربة</button>
-              <?php else: ?>
-                <a class="btnx primary" href="user_login.php?next=<?= urlencode('product_details.php?id=' . (int)$product['id']) ?>">
-                  🔒 تسجيل الدخول للشراء
-                </a>
-              <?php endif; ?>
-            </div>
-          </form>
+          <!-- الكمية -->
+          <label style="display:block;margin-top:12px;">الكمية المطلوبة:</label>
+          <input type="number" name="qty" min="1" value="1" required
+                 style="padding:10px;border-radius:10px;border:none;width:140px;">
 
-        </div>
+          <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;">
+            <?php if ($is_logged): ?>
+              <button class="btnx primary" type="submit">🛒 إضافة للعربة</button>
+            <?php else: ?>
+              <a class="btnx primary"
+                 href="user_login.php?next=<?= urlencode('product_details.php?id=' . $product['id']) ?>">
+                🔒 تسجيل الدخول للشراء
+              </a>
+            <?php endif; ?>
+          </div>
+
+        </form>
 
       </div>
-    </div>
 
+    </div>
   </div>
+
+</div>
+
 </body>
 </html>
